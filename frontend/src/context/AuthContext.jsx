@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 
 const AuthContext = createContext();
 
@@ -9,19 +9,6 @@ export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [ndaSigned, setNdaSigned] = useState(false);
     const [loading, setLoading] = useState(true);
-
-    const api = axios.create({
-        baseURL: 'http://localhost:5000/api',
-    });
-
-    // Add token to requests
-    api.interceptors.request.use((config) => {
-        const token = localStorage.getItem('token');
-        if (token) {
-            config.headers.Authorization = `Bearer ${token}`;
-        }
-        return config;
-    });
 
     useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -33,7 +20,7 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const login = async (email, password) => {
-        const { data: response } = await api.post('/v1/auth/login', { email, password });
+        const { data: response } = await api.post('/auth/login', { email, password });
         const { token, user: userData } = response.data;
         
         localStorage.setItem('token', token);
@@ -51,7 +38,7 @@ export const AuthProvider = ({ children }) => {
 
     const checkNDASigned = async () => {
         try {
-            const { data: response } = await api.get('/v1/nda/status');
+            const { data: response } = await api.get('/nda/status');
             setNdaSigned(response.data.signed);
         } catch (error) {
             console.error('Error checking NDA status:', error);
@@ -59,7 +46,7 @@ export const AuthProvider = ({ children }) => {
     };
 
     const signNDA = async (fullName) => {
-        const { data: response } = await api.post('/v1/nda/accept', { fullName, accepted: true });
+        const { data: response } = await api.post('/nda/accept', { fullName, accepted: true });
         setNdaSigned(true);
         return response.data;
     };

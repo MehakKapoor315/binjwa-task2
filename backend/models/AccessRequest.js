@@ -16,9 +16,11 @@ const accessRequestSchema = mongoose.Schema({
     designation: { type: String },
     status: { 
         type: String, 
-        enum: ['pending', 'approved', 'rejected'], 
+        enum: ['pending', 'in_review', 'approved', 'rejected'], 
         default: 'pending' 
     },
+    rejection_reason: { type: String, default: null },
+    approval_reason: { type: String, default: null },
     reviewed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     reviewed_at: { type: Date }
 }, { timestamps: true });

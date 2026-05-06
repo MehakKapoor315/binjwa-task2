@@ -9,6 +9,7 @@ const ndaRecordSchema = mongoose.Schema({
         default: 'accepted' 
     },
     accepted_at: { type: Date, default: Date.now },
+    signature_name: { type: String, required: true },
     ip_address: { type: String },
     device_info: { type: String },
     session_id: { type: String }

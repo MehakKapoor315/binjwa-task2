@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import NDAModal from '../components/NDA/NDAModal';
-import { LayoutDashboard, ShieldAlert, FileText, Database, User as UserIcon, LogOut, UserPlus, Check, X } from 'lucide-react';
+import { LayoutDashboard, ShieldAlert, FileText, Database, User as UserIcon, LogOut, UserPlus, Check, X, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { Link } from 'react-router-dom';
 
 const AccessRequestsList = ({ api }) => {
     const [requests, setRequests] = useState([]);
@@ -25,17 +26,38 @@ const AccessRequestsList = ({ api }) => {
     };
 
     const handleAction = async (id, status) => {
+        const actionName = status === 'approved' ? 'approve' : 'reject';
+        const reason = window.prompt(`Please provide a reason to ${actionName} this request:`);
+
+        if (!reason || reason.trim() === '') {
+            toast.error('Reason is mandatory for this action');
+            return;
+        }
+
         try {
             if (status === 'approved') {
-                await api.post(`/v1/access-requests/${id}/approve`, { role: 'Investor', tier: 'intelligence' });
-                toast.success('Request approved and user provisioned');
+                const { data: eligibleUsersResp } = await api.get('/v1/approvals/users/eligible');
+                if (!eligibleUsersResp.data || eligibleUsersResp.data.length === 0) {
+                    toast.error('No eligible first approver (Analyst/Admin/Founder) found in system!');
+                    return;
+                }
+                const firstApproverId = eligibleUsersResp.data[0]._id;
+
+                await api.post('/v1/approvals', {
+                    action_type: 'approve_user_access',
+                    entity_id: id,
+                    entity_type: 'access_request',
+                    reason: reason.trim(),
+                    first_approver_id: firstApproverId
+                });
+                toast.success('Approval requested created! Check Dual Approvals.');
             } else {
-                await api.post(`/v1/access-requests/${id}/reject`);
+                await api.post(`/v1/access-requests/${id}/reject`, { reason: reason.trim() });
                 toast.success('Request rejected');
             }
             fetchRequests();
         } catch (error) {
-            toast.error('Action failed');
+            toast.error(error.response?.data?.message || 'Action failed');
         }
     };
 
@@ -79,6 +101,7 @@ const Dashboard = () => {
     const [isNdaModalOpen, setIsNdaModalOpen] = useState(false);
     const [sensitiveData, setSensitiveData] = useState([]);
     const [loadingData, setLoadingData] = useState(false);
+    const [awaitingCount, setAwaitingCount] = useState(0);
 
     const fetchSensitiveData = async () => {
         if (!ndaSigned) {
@@ -101,11 +124,28 @@ const Dashboard = () => {
         }
     };
 
+    const fetchApprovalsCount = async () => {
+        try {
+            const { data: response } = await api.get('/v1/approvals/pending');
+            // The new response format has a summary object
+            const awaitingMineCount = response.data?.summary?.awaiting_my_action || 0;
+            setAwaitingCount(awaitingMineCount);
+        } catch (error) {
+            console.error('Failed to fetch approvals', error);
+        }
+    };
+
     useEffect(() => {
         if (ndaSigned) {
             fetchSensitiveData();
         }
     }, [ndaSigned]);
+
+    useEffect(() => {
+        if (user) {
+            fetchApprovalsCount();
+        }
+    }, [user]);
 
     const getRoleBadge = (role) => {
         const classes = {
@@ -131,6 +171,15 @@ const Dashboard = () => {
                 </div>
 
                 <div className="flex items-center gap-6">
+                    <Link to="/approvals" className="relative p-2 text-text-muted hover:text-white transition-colors">
+                        <Bell size={20} />
+                        {awaitingCount > 0 && (
+                            <span className="absolute top-0 right-0 w-4 h-4 bg-danger rounded-full flex items-center justify-center text-[10px] font-bold text-white border-2 border-[#0f172a]">
+                                {awaitingCount}
+                            </span>
+                        )}
+                    </Link>
+
                     <div className="flex items-center gap-3">
                         <div className="text-right hidden sm:block">
                             <p className="text-sm font-medium">{user.name}</p>

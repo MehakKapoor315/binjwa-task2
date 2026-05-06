@@ -44,10 +44,10 @@ router.get('/status', protect, async (req, res) => {
 // @desc Accept NDA (Digital Signature)
 // @route POST /api/v1/nda/accept
 router.post('/accept', protect, async (req, res) => {
-    const { nda_version_id, accepted } = req.body;
+    const { nda_version_id, accepted, fullName } = req.body;
 
-    if (!accepted) {
-        return errorResponse(res, 'NDA acceptance is required.', 400, 'VALIDATION_ERROR');
+    if (!accepted || !fullName) {
+        return errorResponse(res, 'NDA acceptance and full name signature are required.', 400, 'VALIDATION_ERROR');
     }
 
     try {
@@ -58,6 +58,7 @@ router.post('/accept', protect, async (req, res) => {
             user: req.user._id,
             nda_version: version._id,
             status: 'accepted',
+            signature_name: fullName,
             ip_address: req.ip,
             device_info: req.headers['user-agent']
         });

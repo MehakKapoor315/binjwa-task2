@@ -10,7 +10,11 @@ const sensitiveDataSchema = mongoose.Schema({
     allowedRoles: [{
         type: String,
         enum: ['Admin', 'Investor', 'Founder', 'Analyst']
-    }]
+    }],
+
+    // Record Locking
+    locked_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    locked_at: { type: Date, default: null }
 }, { timestamps: true });
 
 const SensitiveData = mongoose.model('SensitiveData', sensitiveDataSchema);

@@ -32,6 +32,9 @@ router.post('/login', async (req, res) => {
             user.last_login_at = new Date();
             await user.save();
 
+            // Attach user to req so the audit logger captures their ID
+            req.user = user;
+            
             // Audit Log
             const { logActivity } = require('../utils/auditLogger');
             await logActivity(req, 'LOGIN_SUCCESS', 'AUTH', { email: user.email });

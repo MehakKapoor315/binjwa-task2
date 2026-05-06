@@ -2,9 +2,12 @@ const express = require('express');
 const router = express.Router();
 const AccessRequest = require('../models/AccessRequest');
 const User = require('../models/User');
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
+const { authorize } = require('../middleware/roleMiddleware');
+const reasonMiddleware = require('../middleware/reasonMiddleware');
 const { successResponse, errorResponse } = require('../utils/response');
 const { logActivity } = require('../utils/auditLogger');
+const emailService = require('../services/emailService');
 
 // @desc Submit Access Request
 // @route POST /api/v1/access-requests
@@ -32,40 +35,99 @@ router.post('/', async (req, res) => {
     }
 });
 
-// @desc List Access Requests (Admin Only)
+// @desc List Access Requests (Admin/Founder Only)
 // @route GET /api/v1/access-requests
-router.get('/', protect, admin, async (req, res) => {
+router.get('/', protect, authorize('Admin', 'Founder'), async (req, res) => {
     try {
-        const requests = await AccessRequest.find({ status: 'pending' }).sort('-createdAt');
-        return successResponse(res, requests);
+        const { page = 1, limit = 10, status = 'pending', search = '' } = req.query;
+        const skip = (page - 1) * limit;
+
+        let query = { status };
+        if (search) {
+            query.$or = [
+                { full_name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { organization: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const [requests, total] = await Promise.all([
+            AccessRequest.find(query).sort('-createdAt').skip(skip).limit(parseInt(limit)),
+            AccessRequest.countDocuments(query)
+        ]);
+
+        return successResponse(res, requests, 'Requests retrieved successfully', 200, {
+            pagination: {
+                page: parseInt(page),
+                limit: parseInt(limit),
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        });
     } catch (error) {
         return errorResponse(res, error.message, 500, 'SERVER_ERROR');
     }
 });
 
-// @desc Approve Access Request
+// @desc Approve Access Request (Dual-Approval Initiated if Admin)
 // @route POST /api/v1/access-requests/:id/approve
-router.post('/:id/approve', protect, admin, async (req, res) => {
+router.post('/:id/approve', protect, authorize('Admin', 'Founder'), reasonMiddleware, async (req, res) => {
     try {
         const request = await AccessRequest.findById(req.params.id);
         if (!request) return errorResponse(res, 'Request not found', 404);
 
-        const { role, tier } = req.body;
+        const { role, tier, reason } = req.body;
 
-        // Update request
+        // If Admin is approving, initiate Dual Approval
+        if (req.user.role === 'Admin') {
+            // Find an eligible Founder for second approval
+            const founder = await User.findOne({ role: 'Founder', status: 'approved' });
+            
+            if (!founder) {
+                return errorResponse(res, 'No Founder available for dual approval', 400);
+            }
+
+            // Create Approval Request
+            const ApprovalRequestModel = require('../models/ApprovalRequest');
+            const approval = await ApprovalRequestModel.create({
+                action_type: 'approve_user_access',
+                entity_id: request._id,
+                entity_type: 'access_request',
+                requested_by: req.user._id,
+                reason: reason || `Approval request for ${request.full_name}`,
+                first_approver_id: req.user._id,
+                first_approved_at: new Date(),
+                second_approver_id: founder._id,
+                status: 'half_approved',
+                approval_reason: reason
+            });
+
+            // Update access request status
+            request.status = 'in_review';
+            await request.save();
+
+            // Audit Log
+            await logActivity(req, 'ACCESS_APPROVAL_INITIATED', 'ADMIN', { 
+                request_id: request._id,
+                approval_id: approval._id
+            });
+
+            return successResponse(res, { approval, request }, 'First stage approval complete. Routed to Founder for final confirmation.');
+        }
+
+        // If Founder is approving (Direct Approval)
         request.status = 'approved';
+        request.approval_reason = reason;
         request.reviewed_by = req.user._id;
         request.reviewed_at = new Date();
         await request.save();
 
-        // Check if user already exists
         let user = await User.findOne({ email: request.email });
         if (!user) {
-            // Create New User
             user = await User.create({
                 name: request.full_name,
                 email: request.email,
-                password: 'password123', // Default password
+                password: 'password123',
                 role: role || 'Investor',
                 tier: tier || 'preview',
                 status: 'approved',
@@ -74,11 +136,15 @@ router.post('/:id/approve', protect, admin, async (req, res) => {
             });
         }
 
-        // Audit Log
         await logActivity(req, 'ACCESS_REQUEST_APPROVED', 'ADMIN', { 
             request_id: request._id,
-            user_provisioned: user._id 
+            user_provisioned: user._id,
+            reason: reason
         });
+
+        try {
+            await emailService.sendUserApprovedEmail(user);
+        } catch (emailError) {}
 
         return successResponse(res, { request, user }, 'Request approved and user provisioned.');
     } catch (error) {
@@ -88,20 +154,35 @@ router.post('/:id/approve', protect, admin, async (req, res) => {
 
 // @desc Reject Access Request
 // @route POST /api/v1/access-requests/:id/reject
-router.post('/:id/reject', protect, admin, async (req, res) => {
+router.post('/:id/reject', protect, authorize('Admin', 'Founder'), reasonMiddleware, async (req, res) => {
     try {
         const request = await AccessRequest.findById(req.params.id);
         if (!request) return errorResponse(res, 'Request not found', 404);
 
+        const { reason } = req.body;
+
         request.status = 'rejected';
+        request.rejection_reason = reason;
         request.reviewed_by = req.user._id;
         request.reviewed_at = new Date();
         await request.save();
 
         // Audit Log
         await logActivity(req, 'ACCESS_REQUEST_REJECTED', 'ADMIN', { 
-            request_id: request._id 
+            request_id: request._id,
+            reason: reason
         });
+
+        // Send Notification Email
+        try {
+            // We use the request object since the user might not exist in the User collection yet
+            await emailService.sendUserRejectedEmail({
+                name: request.full_name,
+                email: request.email
+            }, reason);
+        } catch (emailError) {
+            console.error('[EmailError] Failed to send rejection email:', emailError.message);
+        }
 
         return successResponse(res, request, 'Request rejected.');
     } catch (error) {

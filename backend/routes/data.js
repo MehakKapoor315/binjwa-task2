@@ -27,10 +27,48 @@ router.get('/', protect, checkNDA, async (req, res) => {
             };
         }
 
-        const data = await SensitiveData.find(query);
+        const data = await SensitiveData.find(query).populate('locked_by', 'name');
         console.log(`🔓 Intelligence accessed by: ${req.user.name} (${req.user.role})`);
         
         return successResponse(res, data);
+    } catch (error) {
+        return errorResponse(res, error.message, 500, 'SERVER_ERROR');
+    }
+});
+
+// @desc Get single intelligence record
+// @route GET /api/v1/intelligence/:id
+router.get('/:id', protect, checkNDA, async (req, res) => {
+    try {
+        const record = await SensitiveData.findById(req.params.id)
+            .populate('locked_by', 'name email role')
+            .populate('owner', 'name email role');
+            
+        if (!record) {
+            return errorResponse(res, 'Record not found', 404);
+        }
+
+        return successResponse(res, record);
+    } catch (error) {
+        return errorResponse(res, error.message, 500, 'SERVER_ERROR');
+    }
+});
+
+// @desc Update intelligence record
+// @route PATCH /api/v1/intelligence/:id
+router.patch('/:id', protect, async (req, res) => {
+    try {
+        const record = await SensitiveData.findByIdAndUpdate(
+            req.params.id,
+            { $set: req.body },
+            { new: true, runValidators: true }
+        );
+        
+        if (!record) {
+            return errorResponse(res, 'Record not found', 404);
+        }
+
+        return successResponse(res, record, 'Record updated successfully');
     } catch (error) {
         return errorResponse(res, error.message, 500, 'SERVER_ERROR');
     }
