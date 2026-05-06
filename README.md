@@ -20,9 +20,15 @@ LandVista is a high-performance, proprietary real estate intelligence platform d
 - **SLA Breach Detection**: Hourly monitoring for delayed approvals or governance breaches.
 - **Daily Compliance Audits**: Background jobs to verify platform integrity.
 
-### 4. Alert & Notification System
-- **Real-time Notifications**: Instant alerts for approval requests, lock overrides, and system criticalities.
-- **Unread Tracking**: Persistent unread badge system for the Governance Queue.
+### 4. Email Notification System
+- **Governance Alerts**: Automated emails sent for new approval requests, status updates, and critical system events.
+- **Onboarding Communication**: Professional emails sent to applicants upon approval (with credentials) or rejection (with reason).
+- **Secure SMTP**: Integrated with secure email providers for reliable delivery.
+
+### 5. Background Monitoring & Cron Jobs
+- **Lock Cleanup**: Auto-releases inactive record locks after 15 minutes.
+- **Compliance Monitor**: Daily checks for governance adherence.
+- **SLA Breach Detection**: Hourly monitoring for delayed approvals.
 
 ## 🛠️ Tech Stack
 
