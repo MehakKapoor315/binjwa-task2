@@ -1,8 +1,19 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
+@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+
+@theme {
+  --color-primary: #6366f1;
+  --color-secondary: #a855f7;
+  --color-accent: #ec4899;
+  --color-danger: #ef4444;
+  --color-warning: #f59e0b;
+  --color-success: #10b981;
+  --color-bg-deep: #020617;
+  --color-bg-surface: rgba(15, 23, 42, 0.8);
+  
+  --font-heading: "Outfit", sans-serif;
+  --font-sans: "Inter", sans-serif;
+}
 
 :root {
   --primary: #6366f1;
